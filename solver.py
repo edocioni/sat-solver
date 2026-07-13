@@ -27,3 +27,11 @@ def evaluate_formula(clauses, assignments):
         return None
     else:
         return True
+        
+def find_unassigned_variable(clauses, assignments):
+    for clause in clauses:
+        for n in clause:
+            for abs(n) not in assignments:
+                return abs(n)
+    return None
+    

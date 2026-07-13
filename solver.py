@@ -16,6 +16,14 @@ def evaluate_clause(clause, assignments):
     else:
         return False
 
-print(evaluate_clause([1, -2, 3], {2: False}))        
-print(evaluate_clause([1, -2, 3], {1: False}))         
-print(evaluate_clause([1, -2, 3], {1: False, 2: True, 3: False}))
+def evaluate_formula(clauses, assignments):
+    unresolved=False
+    for clause in clauses:
+        if evaluate_clause(clause, assignments)==False:
+            return False
+        elif evaluate_clause(clause, assignments)==None:
+            unresolved=True
+    if unresolved==True:
+        return None
+    else:
+        return True

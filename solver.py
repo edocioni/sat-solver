@@ -35,3 +35,22 @@ def find_unassigned_variable(clauses, assignments):
                 return abs(n)
     return None
     
+def solve(clauses, assignments):
+    if evaluate_formula(clauses, assignments)==True:
+        return assignments
+    elif evaluate_formula(clauses, assignments)==False:
+        return None
+    else:
+        new_assignments=assignments.copy()
+        new_assignments[find_unassigned_variable(clauses, assignments)]=True
+        result=(solve(clauses, new_assignments))
+        if(result!=None):
+            return result
+        else:
+            new_assignments=assignments.copy()
+            new_assignments[find_unassigned_variable(clauses, assignments)]=False
+            result=solve(clauses, new_assignments)
+            if(result!=None):
+                return result
+            else:
+                return None

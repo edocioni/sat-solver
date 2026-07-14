@@ -58,10 +58,13 @@ def unit_propagate_step(clauses, assignments):
     return False
 
 def unit_propagate(clauses, assignments):
-    new_assignments=assignments.copy()
-    while unit_propagate_step(clauses, new_assignments):
+    saved_state = assignments.copy()
+    while unit_propagate_step(clauses, assignments):
         pass
-    return new_assignments
+    if evaluate_formula(clauses, assignments)==False:
+        assignments.clear()
+        assignments.update(saved_state)
+    return assignments
 
 def parse_dimacs(filename):
     clauses=[]
@@ -116,27 +119,26 @@ def solve(clauses, assignments):
     elif formula_evaluation==False:
         return None
         
-    new_assignments=assignments.copy()
-    new_assignments=unit_propagate(clauses, new_assignments)
+    assignments=unit_propagate(clauses, assignments)
     
-    if evaluate_formula(clauses, new_assignments)==False:
-        learned_clause=analyze_conflict(clauses, new_assignments)
+    if evaluate_formula(clauses, assignments)==False:
+        learned_clause=analyze_conflict(clauses, assignments)
         clauses.append(learned_clause)
         return None
 
-    var_to_assign=find_unassigned_variable(clauses, new_assignments)
+    var_to_assign=find_unassigned_variable(clauses, assignments)
     if var_to_assign is None:
-        return new_assignments if evaluate_formula(clauses, new_assignments) else None
+        return assignments if evaluate_formula(clauses, assignments) else None
 
-    assignments_true=new_assignments.copy()
-    assignments_true[var_to_assign]=True
-    result=solve(clauses, assignments_true)
+    assignments[var_to_assign]=True
+    result=solve(clauses, assignments)
+    del assignments[var_to_assign]
     if result is not None:
         return result
-        
-    assignments_false=new_assignments.copy()
-    assignments_false[var_to_assign]=False
-    result=solve(clauses, assignments_false)
+    
+    assignments[var_to_assign]=False
+    result=solve(clauses, assignments)
+    del assignments[var_to_assign]
     if result is not None:
         return result
         

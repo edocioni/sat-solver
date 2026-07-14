@@ -63,28 +63,6 @@ def unit_propagate(clauses, assignments):
         pass
     return new_assignments
 
-def solve(clauses, assignments):
-    formula_evaluation=evaluate_formula(clauses, assignments)
-    if formula_evaluation==True:
-        return assignments
-    elif formula_evaluation==False:
-        return None
-    else:
-        new_assignments=assignments.copy()
-        new_assignments=unit_propagate(clauses, new_assignments)
-        new_assignments[find_unassigned_variable(clauses, assignments)]=True
-        result=(solve(clauses, new_assignments))
-        if(result!=None):
-            return result
-        else:
-            new_assignments=assignments.copy()
-            new_assignments[find_unassigned_variable(clauses, assignments)]=False
-            result=solve(clauses, new_assignments)
-            if(result!=None):
-                return result
-            else:
-                return None
-
 def parse_dimacs(filename):
     clauses=[]
     current_clause=[]
@@ -111,5 +89,55 @@ def parse_dimacs(filename):
                     current_clause.append(val)
     return clauses    
 
-clauses = parse_dimacs("uf20-0999.cnf")
-print(clauses)
+def analyze_conflict(clauses, assignments):
+    for clause in clauses:
+        for n in clause:
+            if evaluate_clause(clause, assignments)==False:
+                learned_clause=[n*-1 for n in clause]
+                return learned_clause
+    return None
+
+def validate_solution(clauses, solution):
+    for clause in clauses:
+        clause_satisfied = False
+        for n in clause:
+            desired_value = n > 0
+            if solution[abs(n)] == desired_value:
+                clause_satisfied = True
+                break
+        if not clause_satisfied:
+            return False
+    return True
+
+def solve(clauses, assignments):
+    formula_evaluation=evaluate_formula(clauses, assignments)
+    if formula_evaluation==True:
+        return assignments
+    elif formula_evaluation==False:
+        return None
+        
+    new_assignments=assignments.copy()
+    new_assignments=unit_propagate(clauses, new_assignments)
+    
+    if evaluate_formula(clauses, new_assignments)==False:
+        learned_clause=analyze_conflict(clauses, new_assignments)
+        clauses.append(learned_clause)
+        return None
+
+    var_to_assign=find_unassigned_variable(clauses, new_assignments)
+    if var_to_assign is None:
+        return new_assignments if evaluate_formula(clauses, new_assignments) else None
+
+    assignments_true=new_assignments.copy()
+    assignments_true[var_to_assign]=True
+    result=solve(clauses, assignments_true)
+    if result is not None:
+        return result
+        
+    assignments_false=new_assignments.copy()
+    assignments_false[var_to_assign]=False
+    result=solve(clauses, assignments_false)
+    if result is not None:
+        return result
+        
+    return None

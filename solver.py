@@ -54,18 +54,19 @@ def unit_propagate_step(clauses, assignments):
             var=abs(unresolved_literal)
             value=unresolved_literal>0
             assignments[var]=value
-            return True
-    return False
+            return var
+    return None
+
 
 def unit_propagate(clauses, assignments):
-    saved_state = assignments.copy()
-    while unit_propagate_step(clauses, assignments):
-        pass
-    if evaluate_formula(clauses, assignments)==False:
-        assignments.clear()
-        assignments.update(saved_state)
-    return assignments
-
+    trail=[]
+    while True:
+        var = unit_propagate_step(clauses, assignments)
+        if var is None:
+            break
+        trail.append(var)
+    return trail
+    
 def parse_dimacs(filename):
     clauses=[]
     current_clause=[]
@@ -94,10 +95,9 @@ def parse_dimacs(filename):
 
 def analyze_conflict(clauses, assignments):
     for clause in clauses:
-        for n in clause:
-            if evaluate_clause(clause, assignments)==False:
-                learned_clause=[n*-1 for n in clause]
-                return learned_clause
+        if evaluate_clause(clause, assignments)==False:
+            learned_clause=[-n for n in clause]
+            return learned_clause
     return None
 
 def validate_solution(clauses, solution):
@@ -105,41 +105,50 @@ def validate_solution(clauses, solution):
         clause_satisfied = False
         for n in clause:
             desired_value = n > 0
-            if solution[abs(n)] == desired_value:
+            if abs(n) in solution and solution[abs(n)] == desired_value:
                 clause_satisfied = True
                 break
         if not clause_satisfied:
             return False
     return True
 
+
 def solve(clauses, assignments):
     formula_evaluation=evaluate_formula(clauses, assignments)
+
     if formula_evaluation==True:
-        return assignments
+        return assignments.copy()
     elif formula_evaluation==False:
         return None
-        
-    assignments=unit_propagate(clauses, assignments)
-    
+
+    prop_trail=unit_propagate(clauses, assignments)
     if evaluate_formula(clauses, assignments)==False:
         learned_clause=analyze_conflict(clauses, assignments)
         clauses.append(learned_clause)
+        for var in prop_trail:
+            del assignments[var]
         return None
 
     var_to_assign=find_unassigned_variable(clauses, assignments)
     if var_to_assign is None:
-        return assignments if evaluate_formula(clauses, assignments) else None
+        result=assignments.copy() if evaluate_formula(clauses, assignments) else None
+        for var in prop_trail:
+            del assignments[var]
+        return result
 
     assignments[var_to_assign]=True
     result=solve(clauses, assignments)
     del assignments[var_to_assign]
     if result is not None:
+        for var in prop_trail:
+            del assignments[var]
         return result
-    
+
     assignments[var_to_assign]=False
     result=solve(clauses, assignments)
     del assignments[var_to_assign]
-    if result is not None:
-        return result
-        
-    return None
+
+    for var in prop_trail:
+        del assignments[var]
+
+    return result

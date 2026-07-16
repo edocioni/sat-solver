@@ -96,7 +96,7 @@ def parse_dimacs(filename):
                         current_clause=[]
                 else:
                     current_clause.append(val)
-    return clauses    
+    return clauses,numvars
 
 def validate_solution(clauses, solution):
     for clause in clauses:
@@ -144,6 +144,7 @@ def analyze_conflict(clauses, assignments, current_level, prop_trail):
         assignments_order=[decision_var]+prop_trail
     else:
         assignments_order=list(prop_trail)
+    assignments_order=[v for v in assignments_order if v in assignments]
     while True:
         current_level_literals=[]
         for literal in learned_clause:
@@ -159,29 +160,49 @@ def analyze_conflict(clauses, assignments, current_level, prop_trail):
             if var in [abs(x) for x in learned_clause]:
                 var_to_resolve=var
                 break
-    
+        if var_to_resolve is None:
+            break   
+        
         antecedent=assignments[var_to_resolve].antecedent
-        resolved_set=set(learned_clause) | set(antecedent)
-        resolved_set.discard(var_to_resolve)
-        resolved_set.discard(-var_to_resolve)
-        learned_clause=list(resolved_set)
-    return learned_clause
-    
-def solve(clauses, assignments, current_level=0):
+        if antecedent is None:
+            break  
+        resolved_literal=[lit for lit in learned_clause if abs(lit)==var_to_resolve][0]
+        learned_clause=set(learned_clause) | set(antecedent)
+        learned_clause.discard(resolved_literal)
+        learned_clause.discard(-resolved_literal)
+        learned_clause=list(learned_clause)
+    levels=sorted(set(assignments[abs(lit)].level for lit in learned_clause if abs(lit) in assignments), reverse=True)
+    backjump_level=levels[1] if len(levels)>1 else 0
+    return learned_clause, backjump_level
+
+def solve(clauses, assignments, numvars, current_level=0):
     formula_evaluation=evaluate_formula(clauses, assignments)
 
     if formula_evaluation==True:
+        for var_num in range(1, numvars+1):
+            if var_num not in assignments:
+                assignments[var_num]=Assignment(value=True, level=-1, antecedent=None)
         return assignments.copy()
     elif formula_evaluation==False:
         return None
 
     prop_trail=unit_propagate(clauses, assignments, current_level)
+
     if evaluate_formula(clauses, assignments)==False:
-        learned_clause=analyze_conflict(clauses, assignments, current_level, prop_trail)
-        if learned_clause is not None:
+        assignments_list=[v for v in assignments if assignments[v].level==current_level]
+        result=analyze_conflict(clauses, assignments, current_level, assignments_list)
+
+        if result is not None:
+            learned_clause, backjump_level=result
             clauses.append(learned_clause)
+            for var in list(assignments.keys()):
+                if assignments[var].level>backjump_level:
+                    del assignments[var]
+            return solve(clauses, assignments, numvars, backjump_level)
+
         for var in prop_trail:
-            del assignments[var]
+            if var in assignments:
+                del assignments[var]
         return None
 
     var_to_assign=choose_variable_heuristic(clauses, assignments)
@@ -190,23 +211,29 @@ def solve(clauses, assignments, current_level=0):
     if var_to_assign is None:
         result=assignments.copy() if evaluate_formula(clauses, assignments) else None
         for var in prop_trail:
-            del assignments[var]
+            if var in assignments:
+                del assignments[var]
         return result
 
-    nuovo_livello=current_level+1
-    assignments[var_to_assign]=Assignment(value=True, level=nuovo_livello, antecedent=None)
-    result=solve(clauses, assignments, nuovo_livello)
-    del assignments[var_to_assign]
+    new_level=current_level+1
+
+    assignments[var_to_assign]=Assignment(value=True, level=new_level, antecedent=None)
+    result=solve(clauses, assignments, numvars, new_level)
+    if var_to_assign in assignments:
+        del assignments[var_to_assign]
     if result is not None:
         for var in prop_trail:
-            del assignments[var]
+            if var in assignments:
+                del assignments[var]
         return result
 
-    assignments[var_to_assign] = Assignment(value=False, level=nuovo_livello, antecedent=None)
-    result=solve(clauses, assignments, nuovo_livello)
-    del assignments[var_to_assign]
+    assignments[var_to_assign]=Assignment(value=False, level=new_level, antecedent=None)
+    result=solve(clauses, assignments, numvars, new_level)
+    if var_to_assign in assignments:
+        del assignments[var_to_assign]
 
     for var in prop_trail:
-        del assignments[var]
+        if var in assignments:
+            del assignments[var]
 
     return result

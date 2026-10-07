@@ -175,6 +175,7 @@ def analyze_conflict(clauses, assignments, current_level, prop_trail):
     backjump_level=levels[1] if len(levels)>1 else 0
     return learned_clause, backjump_level
 
+
 def solve(clauses, assignments, numvars, current_level=0):
     formula_evaluation=evaluate_formula(clauses, assignments)
 
@@ -237,3 +238,42 @@ def solve(clauses, assignments, numvars, current_level=0):
             del assignments[var]
 
     return result
+
+def solve_updated(clauses, assignments, numvars, current_level=0):
+    while True:
+        unit_propagate(clauses, assignments, current_level)
+        formula_evaluation=evaluate_formula(clauses, assignments)
+        if formula_evaluation==True:
+            for var_num in range(1, numvars+1):
+                if var_num not in assignments:
+                    assignments[var_num]=Assignment(value=True, level=-1, antecedent=None)
+            return assignments.copy()
+        elif formula_evaluation==False:
+            if current_level==0:
+                return None
+            assignments_list=[v for v in assignments if assignments[v].level==current_level]
+            result=analyze_conflict(clauses, assignments, current_level, assignments_list)
+            if result is not None:
+                learned_clause, backjump_level=result
+                clauses.append(learned_clause)
+                for var in list(assignments.keys()):
+                    if assignments[var].level>backjump_level:
+                        del assignments[var]
+                current_level=backjump_level
+                continue
+        var_to_assign=choose_variable_heuristic(clauses, assignments)
+        if var_to_assign is None:
+            var_to_assign=find_unassigned_variable(clauses, assignments)
+        if var_to_assign is None:
+            return None
+        current_level+=1
+        assignments[var_to_assign]=Assignment(value=True, level=current_level, antecedent=None)
+            
+
+clauses, numvars = parse_dimacs("uf20-0999.cnf")
+result = solve_updated(clauses, {}, numvars)
+if result is None:
+    print("UNSATISFIABLE")
+else:
+    print("SATISFIABLE")
+    print(validate_solution(clauses, result))

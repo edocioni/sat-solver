@@ -1,14 +1,23 @@
+import sys
+from collections import deque
 from dataclasses import dataclass
+from typing import Optional
+
+@dataclass(eq=False)
+class Clause:
+    literals:list[int]
+    watch1:int=0
+    watch2:int=1
 
 @dataclass
 class Assignment:
     value: bool
     level: int
-    antecedent: list[int] = None
-
+    antecedent: Optional[Clause] = None
+    
 def evaluate_clause(clause, assignments):
     unresolved=False
-    for n in clause:
+    for n in clause.literals:
         desired_value=n>0
         if abs(n) in assignments:
             if assignments[abs(n)].value==desired_value:
@@ -21,60 +30,62 @@ def evaluate_clause(clause, assignments):
     else:
         return False
 
-def evaluate_formula(clauses, assignments):
-    unresolved=False
-    for clause in clauses:
-        if evaluate_clause(clause, assignments)==False:
-            return False
-        elif evaluate_clause(clause, assignments)==None:
-            unresolved=True
-    if unresolved==True:
-        return None
-    else:
-        return True
-        
-        
 def find_unassigned_variable(clauses, assignments):
     for clause in clauses:
-        for n in clause:
+        for n in clause.literals:
             if abs(n) not in assignments:
                 return abs(n)
     return None
     
-def unit_propagate_step(clauses, assignments, current_level):
+def init_watches(clauses, numvars):
+    watches={i: [] for i in range(-numvars, numvars+1) if i!=0}
     for clause in clauses:
-        unresolved_literal=None
-        unresolved_count=0
-        satisfied=False
-        for n in clause:
-            desired_value=n>0
-            if abs(n) in assignments:
-                if assignments[abs(n)].value==desired_value:
-                    satisfied=True
-                    break
+        if len(clause.literals)>=1:
+            watches[clause.literals[clause.watch1]].append(clause)
+        if len(clause.literals)>=2:
+            watches[clause.literals[clause.watch2]].append(clause)
+        else:
+            clause.watch2=0
+    return watches
+
+def unit_propagate(watches, assignments, current_level, prop_queue):
+    while prop_queue:
+        p=prop_queue.popleft()
+        false_lit=-p
+        for clause in list(watches[false_lit]):
+            if clause.literals[clause.watch1]==false_lit:
+                other_watch_index=clause.watch2
             else:
-                unresolved_count+=1
-                unresolved_literal=n
-        if not satisfied and unresolved_count==1:
-            var=abs(unresolved_literal)
-            value=unresolved_literal>0
-            assignments[var]=Assignment(value=value, level=current_level, antecedent=clause)
-            return var
+                other_watch_index=clause.watch1
+            other_lit=clause.literals[other_watch_index]
+            if abs(other_lit) in assignments and assignments[abs(other_lit)].value==(other_lit>0):
+                continue
+            found_new_watch=False
+            for k in range(len(clause.literals)):
+                lit_k=clause.literals[k]
+                if k!=other_watch_index:
+                    if abs(lit_k) not in assignments or assignments[abs(lit_k)].value==(lit_k>0):
+                        if clause.literals[clause.watch1]==false_lit:
+                            clause.watch1=k
+                        else:
+                            clause.watch2=k
+                        watches[lit_k].append(clause)
+                        watches[false_lit].remove(clause)
+                        found_new_watch=True
+                        break
+            if not found_new_watch:
+                if abs(other_lit) not in assignments:
+                    assignments[abs(other_lit)]=Assignment(value=(other_lit>0), level=current_level, antecedent=clause)
+                    prop_queue.append(other_lit)
+                else:
+                    return clause
     return None
+                
 
-
-def unit_propagate(clauses, assignments, current_level):
-    trail=[]
-    while True:
-        var = unit_propagate_step(clauses, assignments, current_level)
-        if var is None:
-            break
-        trail.append(var)
-    return trail
-    
 def parse_dimacs(filename):
     clauses=[]
     current_clause=[]
+    numvars=0
     with open(filename, "r") as f:
         for line in f:
             line = line.strip()
@@ -92,16 +103,22 @@ def parse_dimacs(filename):
                 val=int(token)
                 if val==0:
                     if current_clause:
-                        clauses.append(current_clause)
+                        literals=list(dict.fromkeys(current_clause))
+                        if not any(-n in literals for n in literals):
+                            clauses.append(Clause(literals=literals))
                         current_clause=[]
                 else:
                     current_clause.append(val)
+    if current_clause:
+        literals=list(dict.fromkeys(current_clause))
+        if not any(-n in literals for n in literals):
+            clauses.append(Clause(literals=literals))
     return clauses,numvars
 
 def validate_solution(clauses, solution):
     for clause in clauses:
         clause_satisfied = False
-        for n in clause:
+        for n in clause.literals:
             desired_value = n > 0
             if abs(n) in solution and solution[abs(n)].value == desired_value:
                 clause_satisfied = True
@@ -115,7 +132,7 @@ def choose_variable_heuristic(clauses, assignments):
     for clause in clauses:
         if evaluate_clause(clause, assignments)==True:
             continue
-        for n in clause:
+        for n in clause.literals:
             var=abs(n)
             if var not in assignments:
                 if var not in variable_frequency:
@@ -126,154 +143,109 @@ def choose_variable_heuristic(clauses, assignments):
     max_var=max(variable_frequency, key=variable_frequency.get)
     return max_var
 
-def analyze_conflict(clauses, assignments, current_level, prop_trail):
-    conflict_clause=None
-    for clause in clauses:
-        if evaluate_clause(clause,assignments)==False:
-            conflict_clause=clause
-            break
+def analyze_conflict(conflict_clause, assignments, current_level, assignment_list):
     if conflict_clause is None:
         return None
-    learned_clause = list(conflict_clause)
-    decision_var=None
-    for var,asign in assignments.items():
-        if asign.level==current_level and asign.antecedent is None:
-            decision_var=var
-            break
-    if decision_var is not None:
-        assignments_order=[decision_var]+prop_trail
-    else:
-        assignments_order=list(prop_trail)
-    assignments_order=[v for v in assignments_order if v in assignments]
+    learned_clause = list(conflict_clause.literals)
+    # assignment_list e' gia' in ordine di assegnamento (decisione per prima)
+    assignments_order=[v for v in assignment_list if v in assignments]
     while True:
         current_level_literals=[]
         for literal in learned_clause:
             var=abs(literal)
             if assignments[var].level==current_level:
                 current_level_literals.append(literal)
-                
         if len(current_level_literals)<=1:
             break
-        
         var_to_resolve=None
         for var in reversed(assignments_order):
             if var in [abs(x) for x in learned_clause]:
                 var_to_resolve=var
                 break
         if var_to_resolve is None:
-            break   
-        
+            break
         antecedent=assignments[var_to_resolve].antecedent
         if antecedent is None:
-            break  
+            break   
         resolved_literal=[lit for lit in learned_clause if abs(lit)==var_to_resolve][0]
-        learned_clause=set(learned_clause) | set(antecedent)
+        learned_clause=set(learned_clause) | set(antecedent.literals)
         learned_clause.discard(resolved_literal)
         learned_clause.discard(-resolved_literal)
         learned_clause=list(learned_clause)
-    levels=sorted(set(assignments[abs(lit)].level for lit in learned_clause if abs(lit) in assignments), reverse=True)
+    # i letterali di livello 0 sono sempre falsi, inutili nella clausola appresa
+    learned_clause=[lit for lit in learned_clause if assignments[abs(lit)].level>0]
+    levels=sorted(set(assignments[abs(lit)].level for lit in learned_clause), reverse=True)
     backjump_level=levels[1] if len(levels)>1 else 0
     return learned_clause, backjump_level
 
-
 def solve(clauses, assignments, numvars, current_level=0):
-    formula_evaluation=evaluate_formula(clauses, assignments)
-
-    if formula_evaluation==True:
-        for var_num in range(1, numvars+1):
-            if var_num not in assignments:
-                assignments[var_num]=Assignment(value=True, level=-1, antecedent=None)
-        return assignments.copy()
-    elif formula_evaluation==False:
+    watches=init_watches(clauses, numvars)
+    prop_queue=deque()
+    for clause in clauses:
+        if len(clause.literals)==1:
+            unit_lit=clause.literals[0]
+            var=abs(unit_lit)
+            if var not in assignments:
+                assignments[var]=Assignment(value=(unit_lit>0), level=0, antecedent=clause)
+                prop_queue.append(unit_lit)
+    conflict_clause=unit_propagate(watches, assignments, 0, prop_queue)
+    if conflict_clause is not None:
         return None
-
-    prop_trail=unit_propagate(clauses, assignments, current_level)
-
-    if evaluate_formula(clauses, assignments)==False:
-        assignments_list=[v for v in assignments if assignments[v].level==current_level]
-        result=analyze_conflict(clauses, assignments, current_level, assignments_list)
-
-        if result is not None:
-            learned_clause, backjump_level=result
-            clauses.append(learned_clause)
-            for var in list(assignments.keys()):
-                if assignments[var].level>backjump_level:
-                    del assignments[var]
-            return solve(clauses, assignments, numvars, backjump_level)
-
-        for var in prop_trail:
-            if var in assignments:
-                del assignments[var]
-        return None
-
-    var_to_assign=choose_variable_heuristic(clauses, assignments)
-    if var_to_assign is None:
-        var_to_assign=find_unassigned_variable(clauses, assignments)
-    if var_to_assign is None:
-        result=assignments.copy() if evaluate_formula(clauses, assignments) else None
-        for var in prop_trail:
-            if var in assignments:
-                del assignments[var]
-        return result
-
-    new_level=current_level+1
-
-    assignments[var_to_assign]=Assignment(value=True, level=new_level, antecedent=None)
-    result=solve(clauses, assignments, numvars, new_level)
-    if var_to_assign in assignments:
-        del assignments[var_to_assign]
-    if result is not None:
-        for var in prop_trail:
-            if var in assignments:
-                del assignments[var]
-        return result
-
-    assignments[var_to_assign]=Assignment(value=False, level=new_level, antecedent=None)
-    result=solve(clauses, assignments, numvars, new_level)
-    if var_to_assign in assignments:
-        del assignments[var_to_assign]
-
-    for var in prop_trail:
-        if var in assignments:
-            del assignments[var]
-
-    return result
-
-def solve_updated(clauses, assignments, numvars, current_level=0):
     while True:
-        unit_propagate(clauses, assignments, current_level)
-        formula_evaluation=evaluate_formula(clauses, assignments)
-        if formula_evaluation==True:
-            for var_num in range(1, numvars+1):
-                if var_num not in assignments:
-                    assignments[var_num]=Assignment(value=True, level=-1, antecedent=None)
-            return assignments.copy()
-        elif formula_evaluation==False:
-            if current_level==0:
-                return None
-            assignments_list=[v for v in assignments if assignments[v].level==current_level]
-            result=analyze_conflict(clauses, assignments, current_level, assignments_list)
-            if result is not None:
-                learned_clause, backjump_level=result
-                clauses.append(learned_clause)
-                for var in list(assignments.keys()):
-                    if assignments[var].level>backjump_level:
-                        del assignments[var]
-                current_level=backjump_level
-                continue
         var_to_assign=choose_variable_heuristic(clauses, assignments)
         if var_to_assign is None:
             var_to_assign=find_unassigned_variable(clauses, assignments)
         if var_to_assign is None:
-            return None
+            for var in range(1, numvars+1):
+                if var not in assignments:
+                    assignments[var]=Assignment(value=True, level=-1, antecedent=None)
+            return assignments.copy()
         current_level+=1
         assignments[var_to_assign]=Assignment(value=True, level=current_level, antecedent=None)
-            
+        prop_queue=deque([var_to_assign])
+        while True:
+            conflict_clause=unit_propagate(watches, assignments, current_level, prop_queue)
+            if conflict_clause is None:
+                break
+            if current_level==0:
+                return None
+            assignments_list=[v for v in assignments if assignments[v].level==current_level]
+            result=analyze_conflict(conflict_clause, assignments, current_level, assignments_list)
+            if result is None:
+                return None
+            learned_clause, backjump_level=result
+            if not learned_clause:
+                return None
+            # UIP in posizione 0, secondo watch = letterale col livello piu' alto tra i restanti
+            uip_lits=[lit for lit in learned_clause if assignments[abs(lit)].level==current_level]
+            assert len(uip_lits)==1
+            assert_lit=uip_lits[0]
+            rest=[lit for lit in learned_clause if lit!=assert_lit]
+            rest.sort(key=lambda lit: assignments[abs(lit)].level, reverse=True)
+            learned_clause=[assert_lit]+rest
+            for var in list(assignments.keys()):
+                if assignments[var].level>backjump_level:
+                    del assignments[var]
+            current_level=backjump_level
+            new_clause=Clause(literals=learned_clause)
+            clauses.append(new_clause)
+            if len(new_clause.literals)>=1:
+                watches[new_clause.literals[new_clause.watch1]].append(new_clause)
+            if len(new_clause.literals)>=2:
+                watches[new_clause.literals[new_clause.watch2]].append(new_clause)
+            else:
+                new_clause.watch2=0
+            var_assert=abs(assert_lit)
+            assignments[var_assert]=Assignment(value=(assert_lit>0), level=current_level, antecedent=new_clause)
+            prop_queue=deque([assert_lit])
 
-clauses, numvars = parse_dimacs("uf20-0999.cnf")
-result = solve_updated(clauses, {}, numvars)
-if result is None:
-    print("UNSATISFIABLE")
-else:
-    print("SATISFIABLE")
-    print(validate_solution(clauses, result))
+if __name__=="__main__":
+    filename=sys.argv[1] if len(sys.argv)>1 else "uf20-0999.cnf"
+    clauses, numvars = parse_dimacs(filename)
+    originals=list(clauses)
+    result = solve(clauses, {}, numvars)
+    if result is None:
+        print("UNSATISFIABLE")
+    else:
+        print("SATISFIABLE")
+        print(validate_solution(originals, result))

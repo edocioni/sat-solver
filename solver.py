@@ -46,35 +46,45 @@ def unit_propagate(watches, assignments, current_level, prop_queue):
     while prop_queue:
         p=prop_queue.popleft()
         false_lit=-p
-        for clause in list(watches[false_lit]):
-            if clause.literals[clause.watch1]==false_lit:
+        watch_list=watches[false_lit]
+        kept=[]
+        for index in range(len(watch_list)):
+            clause=watch_list[index]
+            literals=clause.literals
+            if literals[clause.watch1]==false_lit:
                 other_watch_index=clause.watch2
             else:
                 other_watch_index=clause.watch1
-            other_lit=clause.literals[other_watch_index]
-            if abs(other_lit) in assignments and assignments[abs(other_lit)].value==(other_lit>0):
+            other_lit=literals[other_watch_index]
+            other=assignments.get(abs(other_lit))
+            if other is not None and other.value==(other_lit>0):
+                kept.append(clause)
                 continue
             found_new_watch=False
-            for k in range(len(clause.literals)):
-                lit_k=clause.literals[k]
+            for k in range(len(literals)):
                 if k!=other_watch_index:
-                    if abs(lit_k) not in assignments or assignments[abs(lit_k)].value==(lit_k>0):
-                        if clause.literals[clause.watch1]==false_lit:
+                    lit_k=literals[k]
+                    assigned_k=assignments.get(abs(lit_k))
+                    if assigned_k is None or assigned_k.value==(lit_k>0):
+                        if literals[clause.watch1]==false_lit:
                             clause.watch1=k
                         else:
                             clause.watch2=k
                         watches[lit_k].append(clause)
-                        watches[false_lit].remove(clause)
                         found_new_watch=True
                         break
-            if not found_new_watch:
-                if abs(other_lit) not in assignments:
-                    assignments[abs(other_lit)]=Assignment(value=(other_lit>0), level=current_level, antecedent=clause)
-                    prop_queue.append(other_lit)
-                else:
-                    return clause
-    return None
-                
+            if found_new_watch:
+                continue
+            kept.append(clause)
+            if other is None:
+                assignments[abs(other_lit)]=Assignment(value=(other_lit>0), level=current_level, antecedent=clause)
+                prop_queue.append(other_lit)
+            else:
+                kept.extend(watch_list[index+1:])
+                watches[false_lit]=kept
+                return clause
+        watches[false_lit]=kept
+    return None          
 
 def parse_dimacs(filename):
     clauses=[]

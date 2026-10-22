@@ -4,7 +4,7 @@ import heapq
 from collections import deque
 from dataclasses import dataclass
 
-@dataclass(eq=False)
+@dataclass(eq=False, slots=True)
 class Clause:
     literals:list[int]
     watch1:int=0
@@ -36,44 +36,44 @@ def init_watches(clauses, numvars):
             watches[literals[0]].append((literals[0], clause))
     return watches
 
-def assign(val, level, reason, trail, lit, current_level, antecedent, saved_phase):
-    var=abs(lit)
-    val[lit]=1
-    val[-lit]=-1
-    level[var]=current_level
-    reason[var]=antecedent
-    saved_phase[var]=1 if lit>0 else -1
-    trail.append(var)
-
 def unit_propagate(watches, val, level, reason, trail, current_level, prop_queue, saved_phase):
     while prop_queue:
         p=prop_queue.popleft()
         false_lit=-p
         watch_list=watches[false_lit]
-        kept=[]
-        for index in range(len(watch_list)):
-            entry=watch_list[index]
+        i=0
+        j=0
+        n=len(watch_list)
+        conflict=None
+        while i<n:
+            entry=watch_list[i]
             clause=entry[1]
+            i+=1
             if clause.deleted:
                 continue
             if val[entry[0]]==1:
-                kept.append(entry)
+                watch_list[j]=entry
+                j+=1
                 continue
             literals=clause.literals
-            if literals[clause.watch1]==false_lit:
+            w1=clause.watch1
+            if literals[w1]==false_lit:
                 other_watch_index=clause.watch2
+                is_w1=True
             else:
-                other_watch_index=clause.watch1
+                other_watch_index=w1
+                is_w1=False
             other_lit=literals[other_watch_index]
             if val[other_lit]==1:
-                kept.append((other_lit, clause))
+                watch_list[j]=(other_lit, clause)
+                j+=1
                 continue
             found_new_watch=False
             for k in range(len(literals)):
                 if k!=other_watch_index:
                     lit_k=literals[k]
                     if val[lit_k]!=-1:
-                        if literals[clause.watch1]==false_lit:
+                        if is_w1:
                             clause.watch1=k
                         else:
                             clause.watch2=k
@@ -82,15 +82,27 @@ def unit_propagate(watches, val, level, reason, trail, current_level, prop_queue
                         break
             if found_new_watch:
                 continue
-            kept.append((other_lit, clause))
+            watch_list[j]=(other_lit, clause)
+            j+=1
             if val[other_lit]==0:
-                assign(val, level, reason, trail, other_lit, current_level, clause, saved_phase)
+                var=abs(other_lit)
+                val[other_lit]=1
+                val[-other_lit]=-1
+                level[var]=current_level
+                reason[var]=clause
+                saved_phase[var]=1 if other_lit>0 else -1
+                trail.append(var)
                 prop_queue.append(other_lit)
             else:
-                kept.extend([e for e in watch_list[index+1:] if not e[1].deleted])
-                watches[false_lit]=kept
-                return clause
-        watches[false_lit]=kept
+                conflict=clause
+                while i<n:
+                    watch_list[j]=watch_list[i]
+                    i+=1
+                    j+=1
+                break
+        del watch_list[j:]
+        if conflict is not None:
+            return conflict
     return None
 
 def analyze_conflict(conflict_clause, level, reason, current_level, trail, val, seen):
@@ -122,9 +134,14 @@ def analyze_conflict(conflict_clause, level, reason, current_level, trail, val, 
     for v in to_clear:
         seen[v]=False
     backjump_level=0
-    for lit in learned_clause[1:]:
-        if level[abs(lit)]>backjump_level:
-            backjump_level=level[abs(lit)]
+    max_i=1
+    for i in range(1, len(learned_clause)):
+        lvl=level[abs(learned_clause[i])]
+        if lvl>backjump_level:
+            backjump_level=lvl
+            max_i=i
+    if len(learned_clause)>1:
+        learned_clause[1], learned_clause[max_i] = learned_clause[max_i], learned_clause[1]
     seen_levels=set(level[abs(lit)] for lit in learned_clause)
     lbd=len(seen_levels)
     return learned_clause, backjump_level, lbd
@@ -144,7 +161,6 @@ def parse_dimacs(filename):
                 numclauses = int(tokens[3])
                 print(f"Problem: {numvars} variables, {numclauses} clauses")
                 continue
-
             tokens = line.split()
             for token in tokens:
                 val=int(token)
@@ -182,26 +198,27 @@ def solve(clauses, numvars, current_level=0):
     seen=[False]*(numvars+1)
     trail=[]
     prop_queue=deque()
-
     for clause in clauses:
         if len(clause.literals)==1:
             unit_lit=clause.literals[0]
             if val[unit_lit]==0:
-                assign(val, level, reason, trail, unit_lit, 0, clause, saved_phase)
+                var=abs(unit_lit)
+                val[unit_lit]=1
+                val[-unit_lit]=-1
+                level[var]=0
+                reason[var]=clause
+                saved_phase[var]=1 if unit_lit>0 else -1
+                trail.append(var)
                 prop_queue.append(unit_lit)
-
     conflict_clause=unit_propagate(watches, val, level, reason, trail, 0, prop_queue, saved_phase)
     if conflict_clause is not None:
         return None
-
     activity=[0.0]*(numvars+1)
     for clause in clauses:
         for n in clause.literals:
             activity[abs(n)]+=1.0
-
     heap=[(-activity[v], v) for v in range(1, numvars+1)]
     heapq.heapify(heap)
-
     var_inc=1.0
     decay=0.95
     conflicts=0
@@ -209,8 +226,22 @@ def solve(clauses, numvars, current_level=0):
     max_learned=500
     restart_inc=100
     next_restart=100
-
     while True:
+        if conflicts>=next_restart:
+            next_restart=conflicts+restart_inc
+            restart_inc=int(restart_inc*1.5)
+            kept_trail=[]
+            for var in trail:
+                if level[var]>0:
+                    val[var]=0
+                    val[-var]=0
+                    reason[var]=None
+                    heapq.heappush(heap, (-activity[var], var))
+                else:
+                    kept_trail.append(var)
+            trail[:]=kept_trail
+            current_level=0
+            prop_queue.clear()
         var_to_assign=None
         while heap:
             neg_act, v = heapq.heappop(heap)
@@ -219,47 +250,32 @@ def solve(clauses, numvars, current_level=0):
                     continue
                 var_to_assign=v
                 break
-
         if var_to_assign is None:
             print("conflicts: ", conflicts)
             return val[:]
-
         current_level+=1
         lit_to_assign=var_to_assign if saved_phase[var_to_assign]==1 else -var_to_assign
-        assign(val, level, reason, trail, lit_to_assign, current_level, None, saved_phase)
-        prop_queue=deque([lit_to_assign])
-
+        val[lit_to_assign]=1
+        val[-lit_to_assign]=-1
+        level[var_to_assign]=current_level
+        reason[var_to_assign]=None
+        saved_phase[var_to_assign]=1 if lit_to_assign>0 else -1
+        trail.append(var_to_assign)
+        prop_queue.append(lit_to_assign)
         while True:
             conflict_clause=unit_propagate(watches, val, level, reason, trail, current_level, prop_queue, saved_phase)
             if conflict_clause is None:
                 break
-
             if current_level==0:
                 return None
-
             conflicts+=1
-
-            if conflicts>=next_restart:
-                next_restart=conflicts+restart_inc
-                restart_inc=int(restart_inc*1.5)
-                for var in trail:
-                    val[var]=0
-                    val[-var]=0
-                    reason[var]=None
-                    heapq.heappush(heap, (-activity[var], var))
-                trail.clear()
-                current_level=0
-                prop_queue.clear()
-                break
-
+            prop_queue.clear()
             learned_clause, backjump_level, lbd=analyze_conflict(conflict_clause, level, reason, current_level, trail, val, seen)
-
             for lit in learned_clause:
                 v=abs(lit)
                 activity[v]+=var_inc
                 if val[v]==0:
                     heapq.heappush(heap, (-activity[v], v))
-
             var_inc/=decay
             if var_inc>1e100:
                 for v in range(1, numvars+1):
@@ -267,7 +283,6 @@ def solve(clauses, numvars, current_level=0):
                 var_inc*=1e-100
                 heap=[(-activity[v], v) for v in range(1, numvars+1) if val[v]==0]
                 heapq.heapify(heap)
-
             kept_trail=[]
             for var in trail:
                 if level[var]>backjump_level:
@@ -279,10 +294,8 @@ def solve(clauses, numvars, current_level=0):
                     kept_trail.append(var)
             trail[:]=kept_trail
             current_level=backjump_level
-
             new_clause=Clause(literals=learned_clause, lbd=lbd)
             learned_clauses.append(new_clause)
-
             if len(learned_clauses)>max_learned:
                 learned_clauses.sort(key=lambda c: c.lbd)
                 half=len(learned_clauses)//2
@@ -291,14 +304,18 @@ def solve(clauses, numvars, current_level=0):
                         c.deleted=True
                 learned_clauses=[c for c in learned_clauses if not c.deleted]
                 max_learned+=300
-
             if len(new_clause.literals)>=2:
                 watches[new_clause.literals[new_clause.watch1]].append((new_clause.literals[new_clause.watch2], new_clause))
                 watches[new_clause.literals[new_clause.watch2]].append((new_clause.literals[new_clause.watch1], new_clause))
             else:
                 new_clause.watch2=0
                 watches[new_clause.literals[0]].append((new_clause.literals[0], new_clause))
-
             assert_lit=new_clause.literals[0]
-            assign(val, level, reason, trail, assert_lit, current_level, new_clause, saved_phase)
-            prop_queue=deque([assert_lit])
+            var_assert=abs(assert_lit)
+            val[assert_lit]=1
+            val[-assert_lit]=-1
+            level[var_assert]=current_level
+            reason[var_assert]=new_clause
+            saved_phase[var_assert]=1 if assert_lit>0 else -1
+            trail.append(var_assert)
+            prop_queue.append(assert_lit)

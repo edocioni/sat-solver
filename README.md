@@ -2,7 +2,7 @@
 
 A modern, lightweight **SAT Solver built from scratch in Python**, evolving from basic backtracking paradigms to a complete **CDCL (Conflict-Driven Clause Learning)** engine.
 
-This project demonstrates the practical implementation of core Boolean Satisfiability algorithms, benchmarked against structured DIMACS CNF benchmarks (such as the Hanoi Tower SAT encodings) and applied to classic CSP problems including Sudoku, N-Queens, and Graph Coloring.
+This project demonstrates the practical implementation of core Boolean Satisfiability algorithms, benchmarked against structured DIMACS CNF planning instances (such as Hanoi Tower SAT encodings) and applied to classic CSP and planning problems including N-Queens and Graph Coloring.
 
 ---
 
@@ -20,24 +20,23 @@ The solver implements a modern CDCL architecture optimized for Python 3:
 
 ---
 
-## 📊 Benchmark & Optimization Progress
+## 📊 Benchmark & Performance (Bounded Model Checking)
 
-The solver was benchmarked on challenging planning instances from SATLIB (Hanoi Towers encoded into CNF). Optimization passes reduced execution time by over **60%** while cutting conflict counts by nearly half.
+The solver was benchmarked on planning instances (Hanoi Towers encoded into CNF). These benchmarks test the efficiency of **VSIDS**, **Phase Saving**, and **LBD Pruning** on deep search trees (up to 31 time-steps).
 
-### Hanoi 4 (`hanoi4.cnf` - 718 variables, 4,934 clauses)
+| Benchmark | Variables | Clauses | Conflicts | Parse Time | Solve Time (PyPy3) | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Hanoi 4 (15 steps)** | 718 | 4,934 | 3,805 | 0.076s | **0.84s** | SAT |
+| **Hanoi 5 (31 steps)** | 1,931 | 14,468 | 59,262 | 0.079s | **9.37s** | SAT |
 
-| Version | Solve Time | Conflicts | Speedup |
+### ⚡ Execution Engines: CPython vs. PyPy3
+
+Executing under **PyPy3 (JIT)** provides a significant speedup by compiling unit propagation and watching lists to native machine instructions:
+
+| Benchmark | CPython Solve Time | PyPy3 JIT Solve Time | Speedup |
 | :--- | :--- | :--- | :--- |
-| **Initial CDCL (Naive)** | 4.41s | 7,004 | Baseline |
-| **Phase 1 (Heap + Phase Saving)** | 2.58s | 6,393 | +41.5% |
-| **Phase 2 (In-Place 2WL + Trail Pop)** | **1.70s** | **3,805** | **+61.4%** |
-
-### Hanoi 5 (`hanoi5.cnf` - 1,931 variables, 14,468 clauses)
-
-| Version | Solve Time | Conflicts | Speedup |
-| :--- | :--- | :--- | :--- |
-| **Phase 1 CDCL** | 42.00s | 95,414 | Baseline |
-| **Final Optimized Engine** | **25.89s** | **59,262** | **+38.3%** |
+| **Hanoi 4** | 1.70s | **0.84s** | **2.0x** |
+| **Hanoi 5** | 25.89s | **9.37s** | **2.8x** |
 
 ---
 
@@ -54,17 +53,17 @@ python solver.py path/to/benchmark.cnf
 ### Output Format
 
 ```text
-Problem: 718 variables, 4934 clauses
-conflicts:  3805
-Parse time: 0.0135s
-Solve time: 1.7030s
+Problem: 1931 variables, 14468 clauses
+conflicts:  59262
+Parse time: 0.0791s
+Solve time: 9.3707s
 SATISFIABLE
 True
 ```
 
-### ⚡ Performance Pro-Tip: PyPy3
+### ⚡ Recommended: PyPy3
 
-Since the codebase uses pure Python without external C-extensions, executing it under **PyPy3 (JIT)** provides a massive performance boost (often $5\times$ to $10\times$ speedup):
+For deep search instances, executing under PyPy3 offers maximum performance:
 
 ```bash
 pypy3 solver.py hanoi5.cnf
@@ -74,9 +73,9 @@ pypy3 solver.py hanoi5.cnf
 
 ## 🧩 Applications & Reductions
 
-This repository also contains propositional reductions for common NP-complete and Constraint Satisfaction Problems (CSP):
+This repository contains propositional reductions and encodings for logic and planning problems:
 
-* **Sudoku Solver:** Encodes $9 \times 9$ board rules (cell, row, column, and block constraints) into CNF.
+* **Bounded Model Checking / Planning:** Encodes temporal state transitions and disk placement rules (Hanoi Towers).
 * **N-Queens Problem:** Generates non-attacking placement constraints for arbitrary $N$.
 * **Graph Coloring:** Translates $k$-colorability constraints for arbitrary undirected graphs into SAT instances.
 

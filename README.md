@@ -59,7 +59,7 @@ Results are checked in two ways:
 
 ```bash
 pip install pytest python-sat
-pytest test.py
+pytest test_solver.py
 ```
 
 ---

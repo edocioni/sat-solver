@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Solver
+solver_old.py
+UF250.1065.100/
+UUF250.1065.100/
+hanoi4.cnf
+hanoi5.cnf

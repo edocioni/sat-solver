@@ -1,0 +1,75 @@
+# Benchmark results
+
+Date: 2026-10-22 23:59  |  timeout per run: 120s
+OS: Windows-11-10.0.26200-SP0
+CPU: AMD Ryzen 7 5800H with Radeon Graphics  |  RAM: 15 GB  |  logical cores: 16
+CPython: Python 3.13.15
+PyPy3: Python 3.12.15 (d90944c94ad6, Oct 13 2026, 20:08:10)
+
+## Tests
+358 passed in 5.17s
+
+## Hanoi (planning, SAT, median of 3 runs)
+
+| Instance | Vars | Clauses | Status | CPython time | CPython conflicts | PyPy3 time | PyPy3 conflicts | MiniSat time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hanoi4 | 718 | 4934 | SAT | 0.75s | 2711 | 0.62s | 2711 | 0.02s |
+| hanoi5 | 1931 | 14468 | SAT | 45.56s | 91477 | 16.03s | 91477 | 0.32s |
+
+## Pigeonhole (UNSAT, median of 3 runs)
+
+| Instance | Vars | Clauses | Status | CPython time | CPython conflicts | PyPy3 time | PyPy3 conflicts | MiniSat time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| php6 | 42 | 133 | UNSAT | 0.09s | - | 0.19s | - | 0.00s |
+| php7 | 56 | 204 | UNSAT | 0.80s | - | 0.44s | - | 0.04s |
+| php8 | 72 | 297 | UNSAT | 16.05s | - | 4.42s | - | 0.42s |
+
+## N-Queens (SAT, median of 3 runs)
+
+| Instance | Vars | Clauses | Status | CPython time | CPython conflicts | PyPy3 time | PyPy3 conflicts | MiniSat time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| queens8 | 64 | 736 | SAT | 0.00s | 10 | 0.01s | 10 | 0.00s |
+| queens12 | 144 | 2608 | SAT | 0.01s | 34 | 0.04s | 34 | 0.00s |
+| queens20 | 400 | 12560 | SAT | 0.03s | 109 | 0.11s | 109 | 0.00s |
+
+## SATLIB uf250 (SAT)
+
+| Instance | Vars | Clauses | Status | CPython time | CPython conflicts | PyPy3 time | PyPy3 conflicts | MiniSat time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| uf250-01.cnf | 250 | 1065 | SAT | 0.07s | 318 | 0.18s | 318 | 0.11s |
+| uf250-010.cnf | 250 | 1065 | SAT | 12.26s | 33616 | 4.65s | 33616 | 0.08s |
+| uf250-0100.cnf | 250 | 1065 | SAT | 79.48s | 143278 | 26.25s | 143278 | 1.43s |
+| uf250-011.cnf | 250 | 1065 | SAT | 67.22s | 126734 | 22.87s | 126734 | 0.18s |
+| uf250-012.cnf | 250 | 1065 | SAT | 5.01s | 16301 | 2.27s | 16301 | 0.77s |
+| uf250-013.cnf | 250 | 1065 | SAT | 1.77s | 6693 | 1.02s | 6693 | 1.91s |
+| uf250-014.cnf | 250 | 1065 | SAT | 13.95s | 38484 | 5.78s | 38484 | 0.32s |
+| uf250-015.cnf | 250 | 1065 | SAT | 0.59s | 2237 | 0.48s | 2237 | 0.02s |
+| uf250-016.cnf | 250 | 1065 | SAT | 7.72s | 22639 | 3.14s | 22639 | 0.03s |
+| uf250-017.cnf | 250 | 1065 | SAT | 8.95s | 25668 | 3.33s | 25668 | 0.30s |
+
+### Summary uf250 (10 instances)
+- CPython: mean 19.70s, median 8.33s, max 79.48s, timeouts 0, mean conflicts 41597
+- PyPy3: mean 7.00s, median 3.24s, max 26.25s, timeouts 0, mean conflicts 41597
+- MiniSat: mean 0.5153s, max 1.9107s
+
+## SATLIB uuf250 (UNSAT)
+
+| Instance | Vars | Clauses | Status | CPython time | CPython conflicts | PyPy3 time | PyPy3 conflicts | MiniSat time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| uuf250-01.cnf | 250 | 1065 | UNSAT | 55.96s | - | 18.66s | - | 2.46s |
+| uuf250-010.cnf | 250 | 1065 | UNSAT | 44.90s | - | 14.73s | - | 1.92s |
+| uuf250-0100.cnf | 250 | 1065 | UNSAT | 101.43s | - | 35.23s | - | 4.34s |
+| uuf250-011.cnf | 250 | 1065 | UNSAT | 96.31s | - | 36.72s | - | 2.49s |
+| uuf250-012.cnf | 250 | 1065 | UNSAT | 45.87s | - | 15.51s | - | 1.68s |
+| uuf250-013.cnf | 250 | 1065 | UNSAT | 54.61s | - | 19.81s | - | 2.15s |
+| uuf250-014.cnf | 250 | 1065 | UNSAT | 83.51s | - | 30.37s | - | 2.79s |
+| uuf250-015.cnf | 250 | 1065 | UNSAT | 79.22s | - | 28.67s | - | 2.53s |
+| uuf250-016.cnf | 250 | 1065 | UNSAT | 32.61s | - | 10.98s | - | 1.44s |
+| uuf250-017.cnf | 250 | 1065 | UNSAT | 52.62s | - | 19.23s | - | 2.39s |
+
+### Summary uuf250 (10 instances)
+- CPython: mean 64.70s, median 55.28s, max 101.43s, timeouts 0
+- PyPy3: mean 22.99s, median 19.52s, max 36.72s, timeouts 0
+- MiniSat: mean 2.4173s, max 4.3380s
+
+Done.

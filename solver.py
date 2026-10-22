@@ -306,3 +306,20 @@ def solve(clauses, numvars, current_level=0):
             saved_phase[var_assert]=1 if assert_lit>0 else -1
             trail.append(var_assert)
             prop_queue.append(assert_lit)
+
+if __name__=="__main__":
+    filename=sys.argv[1] if len(sys.argv)>1 else "hanoi4.cnf"
+    start=time.perf_counter()
+    clauses, numvars = parse_dimacs(filename)
+    originals=list(clauses)
+    parse_time=time.perf_counter()-start
+    start=time.perf_counter()
+    result = solve(clauses, numvars)
+    solve_time=time.perf_counter()-start
+    print(f"Parse time: {parse_time:.4f}s")
+    print(f"Solve time: {solve_time:.4f}s")
+    if result is None:
+        print("UNSATISFIABLE")
+    else:
+        print("SATISFIABLE")
+        print(validate_solution(originals, result))

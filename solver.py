@@ -308,7 +308,10 @@ def solve(clauses, numvars, current_level=0):
             prop_queue.append(assert_lit)
 
 if __name__=="__main__":
-    filename=sys.argv[1] if len(sys.argv)>1 else "hanoi4.cnf"
+    if len(sys.argv)<2:
+        print("Usage: python solver.py <path_to_dimacs.cnf>")
+        sys.exit(1)
+    filename=sys.argv[1]
     start=time.perf_counter()
     clauses, numvars = parse_dimacs(filename)
     originals=list(clauses)

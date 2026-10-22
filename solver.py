@@ -1,4 +1,5 @@
 import sys
+import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional
@@ -191,15 +192,17 @@ def solve(clauses, assignments, numvars, current_level=0):
     conflict_clause=unit_propagate(watches, assignments, 0, prop_queue)
     if conflict_clause is not None:
         return None
+    activity={v: 0.0 for v in range(1, numvars+1)}
+    for clause in clauses:
+        for n in clause.literals:
+            activity[abs(n)]+=1.0
+    var_inc=1.0
+    decay=0.95
     while True:
-        var_to_assign=choose_variable_heuristic(clauses, assignments)
-        if var_to_assign is None:
-            var_to_assign=find_unassigned_variable(clauses, assignments)
-        if var_to_assign is None:
-            for var in range(1, numvars+1):
-                if var not in assignments:
-                    assignments[var]=Assignment(value=True, level=-1, antecedent=None)
+        unassigned=[v for v in range(1, numvars+1) if v not in assignments]
+        if not unassigned:
             return assignments.copy()
+        var_to_assign=max(unassigned, key=activity.get)
         current_level+=1
         assignments[var_to_assign]=Assignment(value=True, level=current_level, antecedent=None)
         prop_queue=deque([var_to_assign])
@@ -216,7 +219,13 @@ def solve(clauses, assignments, numvars, current_level=0):
             learned_clause, backjump_level=result
             if not learned_clause:
                 return None
-            # UIP in posizione 0, secondo watch = letterale col livello piu' alto tra i restanti
+            for lit in learned_clause:
+                activity[abs(lit)]+=var_inc
+            var_inc/=decay
+            if var_inc>1e100:
+                for v in activity:
+                    activity[v]*=1e-100
+                var_inc*=1e-100
             uip_lits=[lit for lit in learned_clause if assignments[abs(lit)].level==current_level]
             assert len(uip_lits)==1
             assert_lit=uip_lits[0]
@@ -238,14 +247,3 @@ def solve(clauses, assignments, numvars, current_level=0):
             var_assert=abs(assert_lit)
             assignments[var_assert]=Assignment(value=(assert_lit>0), level=current_level, antecedent=new_clause)
             prop_queue=deque([assert_lit])
-
-if __name__=="__main__":
-    filename=sys.argv[1] if len(sys.argv)>1 else "uf20-0999.cnf"
-    clauses, numvars = parse_dimacs(filename)
-    originals=list(clauses)
-    result = solve(clauses, {}, numvars)
-    if result is None:
-        print("UNSATISFIABLE")
-    else:
-        print("SATISFIABLE")
-        print(validate_solution(originals, result))

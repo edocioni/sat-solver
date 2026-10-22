@@ -30,13 +30,6 @@ def evaluate_clause(clause, assignments):
         return None
     else:
         return False
-
-def find_unassigned_variable(clauses, assignments):
-    for clause in clauses:
-        for n in clause.literals:
-            if abs(n) not in assignments:
-                return abs(n)
-    return None
     
 def init_watches(clauses, numvars):
     watches={i: [] for i in range(-numvars, numvars+1) if i!=0}
@@ -128,28 +121,12 @@ def validate_solution(clauses, solution):
             return False
     return True
 
-def choose_variable_heuristic(clauses, assignments):
-    variable_frequency={}
-    for clause in clauses:
-        if evaluate_clause(clause, assignments)==True:
-            continue
-        for n in clause.literals:
-            var=abs(n)
-            if var not in assignments:
-                if var not in variable_frequency:
-                    variable_frequency[var]=0
-                variable_frequency[var]+=1
-    if not variable_frequency:
-        return None
-    max_var=max(variable_frequency, key=variable_frequency.get)
-    return max_var
-
 def analyze_conflict(conflict_clause, assignments, current_level, assignment_list):
     if conflict_clause is None:
         return None
     learned_clause = list(conflict_clause.literals)
-    # assignment_list e' gia' in ordine di assegnamento (decisione per prima)
     assignments_order=[v for v in assignment_list if v in assignments]
+    index=len(assignments_order)-1
     while True:
         current_level_literals=[]
         for literal in learned_clause:
@@ -158,13 +135,13 @@ def analyze_conflict(conflict_clause, assignments, current_level, assignment_lis
                 current_level_literals.append(literal)
         if len(current_level_literals)<=1:
             break
-        var_to_resolve=None
-        for var in reversed(assignments_order):
-            if var in [abs(x) for x in learned_clause]:
-                var_to_resolve=var
-                break
-        if var_to_resolve is None:
+        vars_in_clause={abs(x) for x in learned_clause}
+        while index>=0 and assignments_order[index] not in vars_in_clause:
+            index-=1
+        if index<0:
             break
+        var_to_resolve=assignments_order[index]
+        index-=1
         antecedent=assignments[var_to_resolve].antecedent
         if antecedent is None:
             break   
@@ -173,7 +150,6 @@ def analyze_conflict(conflict_clause, assignments, current_level, assignment_lis
         learned_clause.discard(resolved_literal)
         learned_clause.discard(-resolved_literal)
         learned_clause=list(learned_clause)
-    # i letterali di livello 0 sono sempre falsi, inutili nella clausola appresa
     learned_clause=[lit for lit in learned_clause if assignments[abs(lit)].level>0]
     levels=sorted(set(assignments[abs(lit)].level for lit in learned_clause), reverse=True)
     backjump_level=levels[1] if len(levels)>1 else 0

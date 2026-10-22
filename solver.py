@@ -12,18 +12,6 @@ class Clause:
     lbd:int=0
     deleted:bool=False
 
-def evaluate_clause(clause, val):
-    unresolved=False
-    for n in clause.literals:
-        if val[n]==1:
-            return True
-        if val[n]==0:
-            unresolved=True
-    if unresolved:
-        return None
-    else:
-        return False
-
 def init_watches(clauses, numvars):
     watches=[[] for _ in range(2*numvars+1)]
     for clause in clauses:
@@ -142,52 +130,87 @@ def analyze_conflict(conflict_clause, level, reason, current_level, trail, val, 
     if len(learned_clause)>1:
         learned_clause[1], learned_clause[max_i] = learned_clause[max_i], learned_clause[1]
     lbd=len({level[abs(lit)] for lit in learned_clause})
-    return learned_clause, backjump_level, lbd
+    return learned_clause, backjump_level, lbd, to_clear
 
-def parse_dimacs(filename):
+def reduce_db(learned_clauses, reason):
+    learned_clauses.sort(key=lambda c: c.lbd)
+    half=len(learned_clauses)//2
+    for c in learned_clauses[half:]:
+        if c.lbd<=2 or len(c.literals)<2:
+            continue
+        locked=reason[abs(c.literals[c.watch1])] is c or reason[abs(c.literals[c.watch2])] is c
+        if not locked:
+            c.deleted=True
+    return [c for c in learned_clauses if not c.deleted]
+
+def normalize(literals):
+    literals=list(dict.fromkeys(literals))
+    seen=set(literals)
+    if any(-n in seen for n in literals):
+        return None
+    return literals
+
+def build_clauses(raw_clauses):
     clauses=[]
+    has_empty=False
+    for raw in raw_clauses:
+        if not raw:
+            has_empty=True
+            continue
+        literals=normalize(raw)
+        if literals is not None:
+            clauses.append(Clause(literals=literals))
+    return clauses, has_empty
+
+def parse_dimacs(filename, verbose=True):
+    raw_clauses=[]
     current_clause=[]
     numvars=0
     with open(filename, "r") as f:
         for line in f:
-            line = line.strip()
-            if not line or line.startswith("c") or line.startswith("%"):
+            line=line.strip()
+            if line.startswith("%"):
+                break
+            if not line or line.startswith("c"):
                 continue
             if line.startswith("p"):
-                tokens = line.split()
-                numvars = int(tokens[2])
-                numclauses = int(tokens[3])
-                print(f"Problem: {numvars} variables, {numclauses} clauses")
+                tokens=line.split()
+                numvars=int(tokens[2])
+                numclauses=int(tokens[3])
+                if verbose:
+                    print(f"Problem: {numvars} variables, {numclauses} clauses")
                 continue
-            tokens = line.split()
-            for token in tokens:
-                val=int(token)
-                if val==0:
-                    if current_clause:
-                        literals=list(dict.fromkeys(current_clause))
-                        if not any(-n in literals for n in literals):
-                            clauses.append(Clause(literals=literals))
-                        current_clause=[]
+            for token in line.split():
+                n=int(token)
+                if n==0:
+                    raw_clauses.append(current_clause)
+                    current_clause=[]
                 else:
-                    current_clause.append(val)
+                    current_clause.append(n)
     if current_clause:
-        literals=list(dict.fromkeys(current_clause))
-        if not any(-n in literals for n in literals):
-            clauses.append(Clause(literals=literals))
-    return clauses,numvars
+        raw_clauses.append(current_clause)
+    clauses, has_empty=build_clauses(raw_clauses)
+    return clauses, numvars, has_empty
 
 def validate_solution(clauses, solution):
     for clause in clauses:
-        clause_satisfied = False
+        clause_satisfied=False
         for n in clause.literals:
             if solution[n]==1:
-                clause_satisfied = True
+                clause_satisfied=True
                 break
         if not clause_satisfied:
             return False
     return True
 
-def solve(clauses, numvars, current_level=0):
+def solve_raw(raw_clauses, numvars, verbose=False):
+    clauses, has_empty=build_clauses(raw_clauses)
+    if has_empty:
+        return None
+    return solve(clauses, numvars, verbose)
+
+def solve(clauses, numvars, verbose=True):
+    current_level=0
     watches=init_watches(clauses, numvars)
     val=[0]*(2*numvars+1)
     level=[0]*(numvars+1)
@@ -199,6 +222,8 @@ def solve(clauses, numvars, current_level=0):
     for clause in clauses:
         if len(clause.literals)==1:
             unit_lit=clause.literals[0]
+            if val[unit_lit]==-1:
+                return None
             if val[unit_lit]==0:
                 var=abs(unit_lit)
                 val[unit_lit]=1
@@ -238,14 +263,15 @@ def solve(clauses, numvars, current_level=0):
             prop_queue.clear()
         var_to_assign=None
         while heap:
-            neg_act, v = heapq.heappop(heap)
+            neg_act, v=heapq.heappop(heap)
             if val[v]==0:
                 if -neg_act!=activity[v]:
                     continue
                 var_to_assign=v
                 break
         if var_to_assign is None:
-            print("conflicts: ", conflicts)
+            if verbose:
+                print("conflicts: ", conflicts)
             return val[:]
         current_level+=1
         lit_to_assign=var_to_assign if saved_phase[var_to_assign]==1 else -var_to_assign
@@ -264,9 +290,9 @@ def solve(clauses, numvars, current_level=0):
                 return None
             conflicts+=1
             prop_queue.clear()
-            learned_clause, backjump_level, lbd=analyze_conflict(conflict_clause, level, reason, current_level, trail, val, seen)
-            for lit in learned_clause:
-                activity[abs(lit)]+=var_inc
+            learned_clause, backjump_level, lbd, seen_vars=analyze_conflict(conflict_clause, level, reason, current_level, trail, val, seen)
+            for v in seen_vars:
+                activity[v]+=var_inc
             var_inc/=decay
             if var_inc>1e100:
                 for v in range(1, numvars+1):
@@ -281,16 +307,11 @@ def solve(clauses, numvars, current_level=0):
                 reason[var]=None
                 heapq.heappush(heap, (-activity[var], var))
             current_level=backjump_level
+            if len(learned_clauses)>=max_learned:
+                learned_clauses=reduce_db(learned_clauses, reason)
+                max_learned+=300
             new_clause=Clause(literals=learned_clause, lbd=lbd)
             learned_clauses.append(new_clause)
-            if len(learned_clauses)>max_learned:
-                learned_clauses.sort(key=lambda c: c.lbd)
-                half=len(learned_clauses)//2
-                for c in learned_clauses[half:]:
-                    if c.lbd>2:
-                        c.deleted=True
-                learned_clauses=[c for c in learned_clauses if not c.deleted]
-                max_learned+=300
             if len(new_clause.literals)>=2:
                 watches[new_clause.literals[new_clause.watch1]].append((new_clause.literals[new_clause.watch2], new_clause))
                 watches[new_clause.literals[new_clause.watch2]].append((new_clause.literals[new_clause.watch1], new_clause))
@@ -313,11 +334,11 @@ if __name__=="__main__":
         sys.exit(1)
     filename=sys.argv[1]
     start=time.perf_counter()
-    clauses, numvars = parse_dimacs(filename)
+    clauses, numvars, has_empty=parse_dimacs(filename)
     originals=list(clauses)
     parse_time=time.perf_counter()-start
     start=time.perf_counter()
-    result = solve(clauses, numvars)
+    result=None if has_empty else solve(clauses, numvars)
     solve_time=time.perf_counter()-start
     print(f"Parse time: {parse_time:.4f}s")
     print(f"Solve time: {solve_time:.4f}s")

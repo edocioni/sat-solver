@@ -69,9 +69,8 @@ def unit_propagate(watches, val, level, reason, trail, current_level, prop_queue
                 j+=1
                 continue
             found_new_watch=False
-            for k in range(len(literals)):
+            for k, lit_k in enumerate(literals):
                 if k!=other_watch_index:
-                    lit_k=literals[k]
                     if val[lit_k]!=-1:
                         if is_w1:
                             clause.watch1=k
@@ -142,8 +141,7 @@ def analyze_conflict(conflict_clause, level, reason, current_level, trail, val, 
             max_i=i
     if len(learned_clause)>1:
         learned_clause[1], learned_clause[max_i] = learned_clause[max_i], learned_clause[1]
-    seen_levels=set(level[abs(lit)] for lit in learned_clause)
-    lbd=len(seen_levels)
+    lbd=len({level[abs(lit)] for lit in learned_clause})
     return learned_clause, backjump_level, lbd
 
 def parse_dimacs(filename):
@@ -230,16 +228,12 @@ def solve(clauses, numvars, current_level=0):
         if conflicts>=next_restart:
             next_restart=conflicts+restart_inc
             restart_inc=int(restart_inc*1.5)
-            kept_trail=[]
-            for var in trail:
-                if level[var]>0:
-                    val[var]=0
-                    val[-var]=0
-                    reason[var]=None
-                    heapq.heappush(heap, (-activity[var], var))
-                else:
-                    kept_trail.append(var)
-            trail[:]=kept_trail
+            while trail and level[trail[-1]]>0:
+                var=trail.pop()
+                val[var]=0
+                val[-var]=0
+                reason[var]=None
+                heapq.heappush(heap, (-activity[var], var))
             current_level=0
             prop_queue.clear()
         var_to_assign=None
@@ -272,10 +266,7 @@ def solve(clauses, numvars, current_level=0):
             prop_queue.clear()
             learned_clause, backjump_level, lbd=analyze_conflict(conflict_clause, level, reason, current_level, trail, val, seen)
             for lit in learned_clause:
-                v=abs(lit)
-                activity[v]+=var_inc
-                if val[v]==0:
-                    heapq.heappush(heap, (-activity[v], v))
+                activity[abs(lit)]+=var_inc
             var_inc/=decay
             if var_inc>1e100:
                 for v in range(1, numvars+1):
@@ -283,16 +274,12 @@ def solve(clauses, numvars, current_level=0):
                 var_inc*=1e-100
                 heap=[(-activity[v], v) for v in range(1, numvars+1) if val[v]==0]
                 heapq.heapify(heap)
-            kept_trail=[]
-            for var in trail:
-                if level[var]>backjump_level:
-                    val[var]=0
-                    val[-var]=0
-                    reason[var]=None
-                    heapq.heappush(heap, (-activity[var], var))
-                else:
-                    kept_trail.append(var)
-            trail[:]=kept_trail
+            while trail and level[trail[-1]]>backjump_level:
+                var=trail.pop()
+                val[var]=0
+                val[-var]=0
+                reason[var]=None
+                heapq.heappush(heap, (-activity[var], var))
             current_level=backjump_level
             new_clause=Clause(literals=learned_clause, lbd=lbd)
             learned_clauses.append(new_clause)

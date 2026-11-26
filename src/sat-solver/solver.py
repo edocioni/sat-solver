@@ -328,22 +328,26 @@ def solve(clauses, numvars, verbose=True):
             trail.append(var_assert)
             prop_queue.append(assert_lit)
 
-if __name__=="__main__":
-    if len(sys.argv)<2:
-        print("Usage: python solver.py <path_to_dimacs.cnf>")
-        sys.exit(1)
-    filename=sys.argv[1]
-    start=time.perf_counter()
-    clauses, numvars, has_empty=parse_dimacs(filename)
-    originals=list(clauses)
-    parse_time=time.perf_counter()-start
-    start=time.perf_counter()
-    result=None if has_empty else solve(clauses, numvars)
-    solve_time=time.perf_counter()-start
-    print(f"Parse time: {parse_time:.4f}s")
-    print(f"Solve time: {solve_time:.4f}s")
-    if result is None:
+def print_sudoku_36_solution(val):
+    if val is None:
         print("UNSATISFIABLE")
-    else:
-        print("SATISFIABLE")
-        print(validate_solution(originals, result))
+        return
+
+    grid = [[0] * 36 for _ in range(36)]
+
+    for r in range(1, 37):
+        for c in range(1, 37):
+            for num in range(1, 37):
+                var = 1296 * (r - 1) + 36 * (c - 1) + num
+                if val[var] == 1:
+                    grid[r - 1][c - 1] = num
+
+    for r in range(36):
+        if r > 0 and r % 6 == 0:
+            print("-" * 120)
+        row_str = ""
+        for c in range(36):
+            if c > 0 and c % 6 == 0:
+                row_str += "| "
+            row_str += f"{grid[r][c]:2d} "
+        print(row_str)
